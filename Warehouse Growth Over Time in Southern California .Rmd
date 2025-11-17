@@ -2,8 +2,18 @@
 title: "Warehouse Growth Over Time"
 output:
   pdf_document: default
-  html_notebook: default
+  html_document: default
+  
 ---
+
+```{r}
+knitr::opts_chunk$set(
+  fig.path = "figures/",
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE
+)
+```
 
 ```{r}
 #View warehouse list dataset
