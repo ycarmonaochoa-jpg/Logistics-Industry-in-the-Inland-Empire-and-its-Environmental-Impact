@@ -1,0 +1,130 @@
+---
+title: "Warehouse Growth Over Time"
+output: html_notebook
+---
+
+```{r}
+#View warehouse list dataset
+View(data)
+```
+
+```{r}
+#Packages
+library(readxl)
+library(dplyr)
+library(ggplot2)
+```
+
+```{r}
+
+# Read data
+df <- read_excel("Warehouse_List.xlsx")
+
+# Drop first row (it was a second header)
+df_clean <- df[-1, ]
+
+# Extract year built from the correct column (Unnamed: 3)
+df_clean <- df_clean |>
+  mutate(year_built = as.numeric(`...4`)) |>
+  filter(!is.na(year_built))
+
+
+# Count warehouses per year (IMPORTANT: avoid naming column "n")
+warehouse_counts <- df_clean |>
+  group_by(year_built) |>
+  summarise(count = n(), .groups = "drop") |>
+  arrange(year_built)
+
+#Check total built each year
+head(warehouse_counts)
+
+```
+
+```{r}
+#Plot warehouses built each year
+
+ggplot(warehouse_counts, aes(x = year_built, y = count)) +
+  geom_line(color = "grey", size = 1.2) +
+  geom_point(color = "black") +
+  labs(
+    title = "Number of Warehouses Built per Year",
+    x = "Year Built",
+    y = "Warehouses Built That Year"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+#Cumpute cumulative growth
+warehouse_counts <- warehouse_counts |>
+  mutate(cumulative = cumsum(count))
+
+warehouse_counts
+
+```
+
+```{r}
+#Plot cumulative growth
+ggplot(warehouse_counts, aes(x = year_built, y = cumulative)) +
+  geom_line(color = "blue", size = 1.1) +
+  geom_point(color = "darkblue") +
+  labs(
+    title = "Cumulative Growth of Warehouses Over Time",
+    x = "Year Built",
+    y = "Cumulative Number of Warehouses"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+#Fitting the logistic curve to overlay
+
+#Creating a time variable
+warehouse_counts <- warehouse_counts |>
+  mutate(t = year_built - min(year_built))
+
+#Fitting the logistic model 
+logistic_fit <- nls(
+  cumulative ~ K / (1 + A * exp(-r * t)),
+  data = warehouse_counts,
+  start = list(
+    K = max(warehouse_counts$cumulative) * 1.2,  # slightly above current max
+    A = 1,
+    r = 0.1
+  ),
+  control = list(maxiter = 500)
+)
+```
+
+```{r}
+
+#Plot Logistic Curve Overlay
+
+ggplot(warehouse_counts, aes(x = year_built)) +
+  geom_line(aes(y = cumulative), color = "blue", size = 1.1) +
+  geom_point(aes(y = cumulative), color = "darkblue") +
+  geom_line(aes(y = logistic_pred), color = "red", size = 1.2, linetype = "dashed") +
+  theme_minimal() +
+  labs(
+    title = "Cumulative Warehouse Growth with Logistic Fit",
+    x = "Year Built",
+    y = "Cumulative Number of Warehouses",
+    caption = "Blue = observed data | Red = logistic growth model"
+  )
+
+
+```
+
+```{r}
+#Using Logistic Curve to Predict 
+
+warehouse_counts$logistic_pred <- predict(logistic_fit)
+print(warehouse_counts)
+
+
+```
+
+```{r}
+# Analyzing Change in Acres Across the Years
+
+```
