@@ -84,58 +84,6 @@ ggplot(truck_growth_results) +
   theme_classic()
 ```
 
-Many squares:
-
-```{r}
-#number of squares
-N <- 3
-
-#Parameters
-parameters <- list(
-  a = c(1, 1, 1),
-  b = c(1, 2, 1),
-
-  C = tibble(c1 = c(1, 2, 3),
-             c2 = c(2, 1, 3),
-             c3 = c(2, 2, 2)),
-  
-  w = c(100, 54, 30)
-  )
-
-#Initial Conditions
-vars <- c(
-  1, 1, 1,
-  1, 1, 1
-)
-
-
-#Growth function
-truck_growth <- function(t, vars, parameters) {
-Output <- c()
- with(as.list(c(vars, parameters)),{
- # rate of change
-for (j in 1:N){
-for (i in 1:N){
-  Output[i] <- parameters$b[i]*vars[i + N] - parameters$a[i]*vars[i] - parameters$C[[j]][i]*vars[i]# + sum(C[[j]])*vars[i]
-   Output[i + N] <- w[i]
-}
-} 
- # return the rate of change
-list(Output)
- })
-}
-
-#time step and how long to run ODE
-time_step <- 0.01
-max_time <- 100
-times <- seq(0, max_time, by = time_step)
-
-#Run
-truck_growth_results <- ode(y = vars, times = times, func = truck_growth, parms = parameters) |>
-  as_tibble() 
-truck_growth_results
-```
-
 ```{r}
 O <- list()
 for(i in 1:3){
@@ -146,54 +94,4 @@ for(i in 1:3){
   end
 }
 as.vector(O)
-```
-
-```{r}
-#number of squares
-N <- 3
-
-#Parameters
-parameters <- list(
-  a = c(1, 1, 1),
-  b = c(1, 2, 1),
-
-  C = tibble(c1 = c(1, 2, 3),
-             c2 = c(2, 1, 3),
-             c3 = c(2, 2, 2))
-  )
-
-#Initial Conditions
-vars <- c(
-  1, 1, 1,
-  1, 1, 1
-)
-
-
-#Growth function
-truck_growth <- function(t, vars, parameters) {
-Output <- c()
-i <- 1:N
-j <- 1:N
-
- with(as.list(c(vars, parameters)),{
- # rate of change
-map2(.x = 1:N, .y = 1:N, .f = ~{
-  Output[.x] <- parameters$b[.x]*vars[.x + N] - parameters$a[.x]*vars[.x] - parameters$C[[.y]][.x]*vars[.x]# + sum(C[[j]])*vars[i]
-  Output[.x + N] <- 100
-}
-)
- # return the rate of change
-list(Output)
- })
-}
-
-#time step and how long to run ODE
-time_step <- 0.01
-max_time <- 100
-times <- seq(0, max_time, by = time_step)
-
-#Run
-truck_growth_results <- ode(y = vars, times = times, func = truck_growth, parms = parameters) |>
-  as_tibble() 
-truck_growth_results
 ```
