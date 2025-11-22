@@ -6,6 +6,11 @@ editor: visual
 
 ## 
 
+```{r}
+library(deSolve)
+library(tidyverse)
+```
+
 Change the number of squares by changing N and then changing the number of variables to account for those squares. C should always be NxN, and all of the other parameter vectors should be N long. Initial conditions should be Nx2 if we are modeling 2 variables, or Nx3 if we are modeling more than 2.
 
 ```{r}
@@ -14,44 +19,45 @@ N <- 3
 
 #Parameters
 parameters <- list(
-  a = c(0.3, 0.15, 0.5), #trucks going to park
-  b = c(0.2, 0.1, 0.31), #trucks starting their journeys
+  a = c(0.5, .84, .19), #trucks going to park
+  b = c(.40, .20, .9), #trucks starting their journeys
 
-  C = tibble(c1 = c(0, 0.7, 0), #Truck travel matrix TRANSPOSE
-             c2 = c(0.5, 0, 0.3),
-             c3 = c(0, 0.2, 0)),
+  C = matrix(c(0.1, 0, 0.1,
+               0, 0.1, 0,
+               0.3, 0, 0.3), 
+             ncol = N), #Truck travel matrix
+            
   
-  w1 = c(100, 54, 30), #warehouse growth rate
+  w1 = c(0.3, 0.5, 0.2), #warehouse growth rate
   w2 = c(3000, 3200, 1222) #warehouse carrying capacity
   )
 
 #Initial Conditions
-vars <- c(
-  1, 1, 1,
-  1, 1, 1
+Y <- c(
+  300, 1800, 1000, #initial trucks
+  3200, 1800, 100  #initial warehouses
 )
 
 
 #Growth function
-truck_growth <- function(t, vars, parameters) {
-Output <- c()
- with(as.list(c(vars, parameters)),{
+truck_growth <- function(t, Y, parameters) {
+dY <- c()
+ with(as.list(c(Y, parameters)),{
  # rate of change
-   #vars[i] is trucks,
-   #vars[i + N] is warehouses
-    for (j in 1:N){
+   #Y[i] is trucks,
+   #Y[i + N] is warehouses
       for (i in 1:N){
-        Output[i] <- parameters$b[i] * vars[i + N] - 
-          parameters$a[i] * vars[i] - 
-          parameters$C[[j]][i] * vars[i] + 
-          sum(parameters$C[[j]]) * vars[i]
-        Output[i + N] <- parameters$w1[i] *
+        dY[i] <- parameters$b[i] * Y[i + N] - 
+          parameters$a[i] * Y[i] - 
+          sum(parameters$C[,i]) * Y[i] +
+          sum(parameters$C[i,] * Y[1:N]) 
+        
+        dY[i + N] <- parameters$w1[i] * Y[i + N] *
           (1 - (1 / parameters$w2[i]) * 
-             vars[i + N])
+             Y[i + N])
       }
-    } 
     # return the rate of change
-    list(Output)
+    list(dY)
  })
 }
 
@@ -61,10 +67,9 @@ max_time <- 100
 times <- seq(0, max_time, by = time_step)
 
 #Run
-truck_growth_results <- ode(y = vars, times = times, func = truck_growth, parms = parameters) |>
+truck_growth_results <- ode(y = Y, times = times, func = truck_growth, parms = parameters) |>
   as_tibble() 
 truck_growth_results
-
 ```
 
 ```{r}
@@ -77,4 +82,63 @@ ggplot(truck_growth_results) +
 ggplot(truck_growth_results) +
   geom_line(aes(x = time, y = `4`)) +
   theme_classic()
+```
+
+```{r}
+#number of squares
+N <- 3
+
+#Parameters
+parameters <- list(
+  a = c(0.5, .84, .19), #trucks going to park
+  b = c(.40, .20, .9), #trucks starting their journeys
+
+  C = tibble(c1 = c(0, 0.9, 0), #Truck travel matrix TRANSPOSE
+             c2 = c(0.5, 0, 0.3),
+             c3 = c(0, 0.2, 0)),
+  
+  w1 = c(100, 54, 30), #warehouse growth rate
+  w2 = c(3000, 3200, 1222) #warehouse carrying capacity
+  )
+
+#Initial Conditions
+Y <- c(
+  300, 1800, 1000, #initial trucks
+  3200, 1800, 100  #initial warehouses
+)
+
+
+#Growth function
+truck_growth <- function(t, Y, parameters) {
+dY <- c()
+ with(as.list(c(Y, parameters)),{
+ # rate of change
+   #Y[i] is trucks,
+   #Y[i + N] is warehouses
+    for (j in 1:N){
+      for (i in 1:N){
+        dY[i] <- parameters$b[i] * Y[i + N] - 
+          parameters$a[i] * Y[i] - 
+          sum(parameters$C[[i]]) * Y[i] +
+          sum(slice(parameters$C, i) * Y[1:N]) 
+        dY[i + N] <- parameters$w1[i] * Y[i + N] *
+          (1 - (1 / parameters$w2[i]) * 
+             Y[i + N])
+      }
+    } 
+    # return the rate of change
+    list(dY)
+ })
+}
+
+#time step and how long to run ODE
+time_step <- 0.01
+max_time <- 100
+times <- seq(0, max_time, by = time_step)
+
+#Run
+truck_growth_results <- ode(y = Y, times = times, func = truck_growth, parms = parameters) |>
+  as_tibble() 
+truck_growth_results
+
 ```
