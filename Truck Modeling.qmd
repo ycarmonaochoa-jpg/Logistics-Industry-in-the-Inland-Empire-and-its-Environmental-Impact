@@ -12,7 +12,7 @@ library(tidyverse)
 Create DE
 
 ```{r}
-truck_model <- function(square, param_a, param_b, param_c, param_d, param_w){
+truck_model_single <- function(square, param_a, param_b, param_c, param_d, param_w){
 #Parameters
 parameters <- c(
   a = param_a,
@@ -40,11 +40,11 @@ state <- c(
 
 
 #Growth function
-truck_growth <- function(t, state, parameters) {
+truck_growth_single <- function(t, state, parameters) {
  with(as.list(c(state, parameters)),{
  # rate of change
   dR <- b*W - a*R - d1*R - d2*R - d3*R - d4*R
-  dW <- w1*(1 - w2*W)
+  dW <- w1*W*(1 - w2*W)
 
  # return the rate of change
  list(c(dR, dW))
@@ -57,13 +57,12 @@ max_time <- 100
 times <- seq(0, max_time, by = time_step)
 
 #Run
-truck_growth_results <- ode(y = state, times = times, func = truck_growth, parms = parameters) |>
-  as_tibble() |>
-  mutate(square = square)
-truck_growth_results
+truck_growth_results_single <- ode(y = state, times = times, func = truck_growth_single, parms = parameters) |>
+  as_tibble()
+truck_growth_results_single
 }
 
-truck_model("Test Square", 
+truck_model_single("Test Square", 
             1, #a parameter
             1, #b parameter
             c(1, 1, 1, 1), #c parameter vector
@@ -74,12 +73,12 @@ truck_model("Test Square",
 
 ```{r}
 #R vs time graph
-ggplot(truck_growth_results) +
+ggplot(truck_growth_results_single) +
   geom_line(aes(x = time, y = R)) +
   theme_classic()
 
 #W vs time graph
-ggplot(truck_growth_results) +
+ggplot(truck_growth_results_single) +
   geom_line(aes(x = time, y = W)) +
   theme_classic()
 ```

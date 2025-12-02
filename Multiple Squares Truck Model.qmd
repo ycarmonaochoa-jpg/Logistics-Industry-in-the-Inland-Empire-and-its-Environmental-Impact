@@ -11,31 +11,39 @@ library(deSolve)
 library(tidyverse)
 ```
 
-Change the number of squares by changing N and then changing the number of variables to account for those squares. C should always be NxN, and all of the other parameter vectors should be N long. Initial conditions should be Nx2 if we are modeling 2 variables, or Nx3 if we are modeling more than 2.
+Change the number of regions by changing N and then changing the number of variables to account for those regions. C should always be NxN, and all of the other parameter vectors should be N long. Initial conditions should be Nx2 if we are modeling 2 variables, or Nx3 if we are modeling 3.
 
 ```{r}
-#number of squares
-N <- 3
+#number of regions
+N <- 4
+
+#area of each region (m^2)
+A <- 2.7*10^10 / N
 
 #Parameters
 parameters <- list(
-  a = c(0.5, .84, .19), #trucks going to park
-  b = c(.40, .20, .9), #trucks starting their journeys
+  a = c(0.5, .84, .19, 0.1), #trucks going to park
+  b = c(.40, .20, .9, 0.3), #trucks starting their journeys
 
-  C = matrix(c(0.1, 0, 0.1,
-               0, 0.1, 0,
-               0.3, 0, 0.3), 
-             ncol = N), #Truck travel matrix
+  C = matrix(c(0, 0.1, 0, 0,
+               0.3, 0, 0.2, 0.1,
+               0, 0.2, 0, 0,
+               0, 0.2, 0, 0), 
+             ncol = N), #Truck travel matrix, fraction of trucks moving between the regions
             
   
-  w1 = c(0.3, 0.5, 0.2), #warehouse growth rate
-  w2 = c(3000, 3200, 1222) #warehouse carrying capacity
+  w1 = c(0.3, 0.5, 0.2, 0.3), #warehouse growth rate
+  w2 = c(3000, 3200, 1222, 300), #warehouse carrying capacity
+  
+  p = 10, #trucks emissions rate
+  d = 4 #pollution dispersal rate
   )
 
 #Initial Conditions
 Y <- c(
-  300, 1800, 1000, #initial trucks
-  3200, 1800, 100  #initial warehouses
+  300, 1800, 1000, 2000, #initial trucks
+  3200, 1800, 100, 150,  #initial warehouses
+  8, 8, 8, 8 #initial PM in the air (micrograms/m^3, assume that it starts at 8 micrograms per cubic meter, the AQI for today and tomorrow)
 )
 
 
@@ -52,9 +60,11 @@ dY <- c()
           sum(parameters$C[,i]) * Y[i] +
           sum(parameters$C[i,] * Y[1:N]) 
         
-        dY[i + N] <- parameters$w1[i] * Y[i + N] *
-          (1 - (1 / parameters$w2[i]) * 
-             Y[i + N])
+        dY[i + N] <- parameters$w1[i] #* Y[i + N] *
+          #(1 - (1 / parameters$w2[i]) * 
+           #  Y[i + N])
+        
+        dY[i + 2*N] <- parameters$p * Y[i] - parameters$d * Y[i + 2*N]
       }
     # return the rate of change
     list(dY)
@@ -63,7 +73,7 @@ dY <- c()
 
 #time step and how long to run ODE
 time_step <- 0.01
-max_time <- 100
+max_time <- 500
 times <- seq(0, max_time, by = time_step)
 
 #Run
@@ -75,21 +85,107 @@ Data wrangling
 
 ```{r}
 trucks <- truck_growth_results |>
-  select(1:(N+1))
+  select(1:(N + 1)) |>
+  mutate(total_trucks = rowSums(across(2:(N + 1))))
+
 warehouses <- truck_growth_results |>
-  select(1, (N + 2):(2*N + 1))
+  select(1, (N + 2):(2*N + 1)) |>
+  mutate(total_warehouses = rowSums(across(2:(N + 1))))
+
+pollution <- truck_growth_results |>
+  select(1, (2*N + 2):(3*N + 1)) |>
+  mutate(total_pollution = rowSums(across(2:(N + 1))))
 ```
 
 Plotting
 
 ```{r}
 #R vs time graph
-ggplot(truck_growth_results) +
-  geom_line(aes(x = time, y = `1`)) +
-  theme_classic()
+trucks |>
+ggplot() +
+  geom_line(aes(x = time, y = total_trucks)) +
+  theme_classic() +
+  labs(
+    title = "Total Trucks vs Time",
+    x = "Time",
+    y = "Total Trucks"
+  )
 
+```
+
+```{r}
+trucks |>
+  pivot_longer(2:(N + 1), names_to = "region", values_to = "trucks") |>
+  select(time, region, trucks, total_trucks) |>
+  ggplot(aes(x = time)) +
+  geom_line(aes(y = trucks, color = region)) +
+  geom_line(aes(y = total_trucks, color = "Total")) +
+  theme_classic() +
+  labs(
+    title = "Trucks vs Time by Region",
+    x = "Time",
+    y = "Trucks",
+    legend = "Region"
+  )
+```
+
+```{r}
 #W vs time graph
-ggplot(truck_growth_results) +
-  geom_line(aes(x = time, y = `4`)) +
-  theme_classic()
+warehouses |>
+ggplot(aes(x = time, y = total_warehouses)) +
+  geom_line() +
+  theme_classic() +
+  labs(
+    title = "Total Warehouses vs Time",
+    x = "Time",
+    y = "Total Warehouses"
+  )
+
+```
+
+```{r}
+warehouses |>
+  rename_with(~as.character(seq_along(.x)), .cols = 2:(N + 1)) |>
+  pivot_longer(2:(N + 1), names_to = "region", values_to = "warehouses") |>
+  select(time, region, warehouses, total_warehouses) |>
+  ggplot(aes(x = time)) +
+  geom_line(aes(y = warehouses, color = region)) +
+  geom_line(aes(y = total_warehouses, color = "Total")) +
+  theme_classic() +
+  labs(
+    title = "Warehouses vs Time by Region",
+    x = "Time",
+    y = "Warehouses",
+    legend = "Region"
+  )
+```
+
+```{r}
+#Pollution vs time graph
+pollution |>
+ggplot(aes(x = time, y = total_pollution)) +
+  geom_line() +
+  theme_classic() +
+  labs(
+    title = "Total Pollution vs Time",
+    x = "Time",
+    y = "Total Pollution"
+  )
+```
+
+```{r}
+pollution |>
+  rename_with(~as.character(seq_along(.x)), .cols = 2:(N + 1)) |>
+  pivot_longer(2:(N + 1), names_to = "region", values_to = "pollution") |>
+  select(time, region, pollution, total_pollution) |>
+  ggplot(aes(x = time)) +
+  geom_line(aes(y = pollution, color = region)) +
+  geom_line(aes(y = total_pollution, color = "Total")) +
+  theme_classic() +
+  labs(
+    title = "Pollution vs Time by Region",
+    x = "Time",
+    y = "Pollution",
+    legend = "Region"
+  )
 ```
