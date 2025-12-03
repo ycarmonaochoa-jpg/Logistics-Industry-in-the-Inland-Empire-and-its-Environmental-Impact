@@ -26,7 +26,7 @@ N <- 4
 H <- 1500
 
 #volume of each region (m^3)
-V <- 2.7*10^10 * H / N
+V <- 7*10^10 * H / N
 
 #warehouse growth mean from logistic fit
 warehouse_rate_yrs <- 0.0536353459944 #(yr^-1)
@@ -35,12 +35,13 @@ warehouse_rate <- warehouse_rate_yrs * 0.00273973 #(day^-1)
 #warehouse carrying capacity from logistic fit
 warehouse_cap <- 1.1193946263*10^9 #sqft
 
-#number of warehouses at start of data
-warehouses_0 <- sqft_yearly$logistic_pred[1] #sqft
+#mean number of trucks and warehouses at start of data
+trucks_0 <- 300000 #Trucks per region
+warehouses_0 <- sqft_yearly$logistic_pred[1] #sqft in total IE
 
 #what year should we start showing our data at?
 start_year <- 2020
-end_year <- 2030
+end_year <- 2080
 ```
 
 System of ODEs itself:
@@ -48,12 +49,12 @@ System of ODEs itself:
 ```{r}
 #Parameters
 parameters <- list(
-  a = c(0.2, 0.2, 0.3, 0.3), #trucks going to park, should add to 1 since most trucks have a 11 hour daily limit
+  a = c(0.8, 0.2, 0.05, 0.05), #trucks going to park, should add to 1 since most trucks have a 11 hour daily limit
   b = rnorm(N, mean = warehouse_summary$b[1], sd = 0.00001), #(trucks/day/sqft of warehouse)
   #trucks starting their journeys, a random number with the mean being the average amount of trips per day that a square foot of warehosue produces in Southern CA.
 
-  C = matrix(c(0, 0.1, 0, 0,
-               0.3, 0, 0.2, 0.1,
+  C = matrix(c(0, 0.2, 0, 0,
+               0.2, 0, 0.2, 0.2,
                0, 0.2, 0, 0,
                0, 0.2, 0, 0), 
              ncol = N), #Truck travel matrix, fraction of trucks moving between the regions
@@ -62,19 +63,18 @@ parameters <- list(
   w1 = rnorm(N, warehouse_rate, sd = 0.00001), #warehouse growth rate
   w2 = rnorm(N, warehouse_cap, sd = 0.1*10^9) / N, #warehouse carrying capacity
   
-  pm = 10, #trucks PM emissions rate
-  pm_disp = 4, #PM dispersal rate
+  pm = vehicle_summary$PM[1] * 10^6 / V, #trucks diesel PM emissions rate (micrograms/(truck*m^3*day))
+  pm_disp = 0.8, #PM dispersal rate, 80% of PM in the air disperses every day
   
-  co2 = 10, #trucks CO2 emissions rate
-  co2_disp = 4, #CO2 dispersal rate
+  co2 = vehicle_summary$CO2[1], #trucks CO2 emissions rate (g/truck/day)
   
-  nox = 10, #trucks NOx emissions rate
-  nox_disp = 4 #NOx dispersal rate
+  nox = vehicle_summary$NOx[1] * 10^6 / V / 1.4, #trucks NOx emissions rate (ppb/truck/day/m^3)
+  nox_disp = 0.9 #NOx dispersal rate
   )
 
 #Initial Conditions
 Y <- c(
-  300, 1800, 1000, 2000, #initial trucks
+  rnorm(N, trucks_0, 100000), #initial trucks
   rnorm(N, warehouses_0, 100000000) / N, #initial warehouses
   8, 8, 8, 8, #initial PM in the air (micrograms/m^3)
   0, 0, 0, 0, #initial CO2 in the air (g)
@@ -93,20 +93,20 @@ dY <- c()
    #Y[i + 3N] is CO2
    #Y[i + 4N] is NOx
       for (i in 1:N){
-        dY[i] <- parameters$b[i] * Y[i + N] - 
+        dY[i] <- parameters$b[i] * Y[i + N] -  #trucks
           parameters$a[i] * Y[i] - 
           sum(parameters$C[,i]) * Y[i] +
           sum(parameters$C[i,] * Y[1:N]) 
         
-        dY[i + N] <- parameters$w1[i] * Y[i + N] *
+        dY[i + N] <- parameters$w1[i] * Y[i + N] * #warehouses
           (1 - (1 / parameters$w2[i]) * 
              Y[i + N])
         
-        dY[i + 2*N] <- parameters$pm * Y[i] - parameters$pm_disp * Y[i + 2*N]
+        dY[i + 2*N] <- parameters$pm * Y[i] - parameters$pm_disp * Y[i + 2*N] #PM
         
-        dY[i + 3*N] <- parameters$co2 * Y[i] - parameters$co2_disp * Y[i + 3*N]
+        dY[i + 3*N] <- parameters$co2 * Y[i] #CO2
         
-        dY[i + 4*N] <- parameters$nox * Y[i] - parameters$nox_disp * Y[i + 4*N]
+        dY[i + 4*N] <- parameters$nox * Y[i] - parameters$nox_disp * Y[i + 4*N] #NOx
       }
     # return the rate of change
     list(dY)
@@ -135,6 +135,11 @@ trucks <- truck_growth_results |>
   filter(time > limit) |>
   mutate(time = time - limit)
 
+trucks_few_days <- truck_growth_results |>
+  select(1:(N + 1)) |>
+  mutate(total_trucks = rowSums(across(2:(N + 1)))) |>
+  filter(time < 50) 
+
 warehouses <- truck_growth_results |>
   select(1, (N + 2):(2*N + 1)) |>
   mutate(total_warehouses = rowSums(across(2:(N + 1)))) |>
@@ -143,24 +148,26 @@ warehouses <- truck_growth_results |>
 
 PM <- truck_growth_results |>
   select(1, (2*N + 2):(3*N + 1)) |>
-  mutate(total_pollution = rowSums(across(2:(N + 1))))|>
-  filter(time > limit) |>
-  mutate(time = time - limit)
+  mutate(total_PM = rowMeans(across(2:(N + 1))))|>
+  filter(time > limit - 20*365.25) |>
+  mutate(time = time - limit + 20*365.25)
 
 CO2 <- truck_growth_results |>
   select(1, (3*N + 2):(4*N + 1)) |>
-  mutate(total_warehouses = rowSums(across(2:(N + 1)))) |>
-  filter(time > limit) |>
-  mutate(time = time - limit)
+  mutate(total_CO2 = rowSums(across(2:(N + 1)))) #|>
+  #filter(time > limit) |>
+  #mutate(time = time - limit)
 
 NOx <- truck_growth_results |>
   select(1, (4*N + 2):(5*N + 1)) |>
-  mutate(total_warehouses = rowSums(across(2:(N + 1)))) |>
-  filter(time > limit) |>
-  mutate(time = time - limit)
+  mutate(total_NOx = rowMeans(across(2:(N + 1)))) |>
+  filter(time > limit - 20*365.25) |>
+  mutate(time = time - limit + 20*365.25)
 ```
 
-Plotting
+Plotting:
+
+Trucks
 
 ```{r}
 #R vs time graph
@@ -195,6 +202,25 @@ trucks |>
 ```
 
 ```{r}
+trucks_few_days |>
+  pivot_longer(2:(N + 1), names_to = "region", values_to = "trucks") |>
+  select(time, region, trucks, total_trucks) |>
+  ggplot(aes(x = time)) +
+  geom_line(aes(y = trucks, color = region)) +
+  geom_line(aes(y = total_trucks, color = "Total")) +
+  theme_classic() +
+  labs(
+    title = "Trucks vs Time by Region",
+    subtitle = "Short time scale",
+    x = "Time (days)",
+    y = "Trucks",
+    legend = "Region"
+  )
+```
+
+Warehouses
+
+```{r}
 #W vs time graph
 warehouses |>
 ggplot(aes(x = time, y = total_warehouses)) +
@@ -204,7 +230,7 @@ ggplot(aes(x = time, y = total_warehouses)) +
     title = "Total Warehouses vs Time",
     subtitle = str_c("Starting in ", start_year, ", ending in ", end_year),
     x = "Time (days)",
-    y = "Total Warehouses Area (sq. ft.)"
+    y = "Total Warehouses Area (sq. ft)"
   )
 
 ```
@@ -216,26 +242,27 @@ warehouses |>
   select(time, region, warehouses, total_warehouses) |>
   ggplot(aes(x = time)) +
   geom_line(aes(y = warehouses, color = region)) +
-  geom_line(aes(y = total_warehouses, color = "Total")) +
   theme_classic() +
   labs(
-    title = "Warehouses vs Time by Region",
+    title = "Warehouse Area vs Time by Region",
     subtitle = str_c("Starting in ", start_year, ", ending in ", end_year),
-    x = "Time",
-    y = "Warehouses",
+    x = "Time (days)",
+    y = "Warehouse Area (sq. ft)",
     legend = "Region"
   )
 ```
 
+Particulate Matter
+
 ```{r}
-#Pollution vs time graph
+#PM vs time graph
 PM |>
-ggplot(aes(x = time, y = total_pollution)) +
+ggplot(aes(x = time, y = total_PM)) +
   geom_line() +
   theme_classic() +
   labs(
-    title = "Total Particulate Matter (PM) vs Time",
-    subtitle = str_c("Starting in ", start_year, ", ending in ", end_year),
+    title = "Particulate Matter (PM) Concentration vs Time",
+    subtitle = str_c("Starting in ", start_year - 20, ", ending in ", end_year),
     x = "Time (days)",
     y = "Total PM (μg/m^3)"
   )
@@ -244,14 +271,63 @@ ggplot(aes(x = time, y = total_pollution)) +
 ```{r}
 PM |>
   rename_with(~as.character(seq_along(.x)), .cols = 2:(N + 1)) |>
-  pivot_longer(2:(N + 1), names_to = "region", values_to = "pollution") |>
-  select(time, region, pollution, total_pollution) |>
+  pivot_longer(2:(N + 1), names_to = "region", values_to = "PM") |>
+  select(time, region, PM, total_PM) |>
   ggplot(aes(x = time)) +
-  geom_line(aes(y = pollution, color = region)) +
-  geom_line(aes(y = total_pollution, color = "Total")) +
+  geom_line(aes(y = PM, color = region)) +
+  geom_line(aes(y = total_PM, color = "Total")) +
   theme_classic() +
   labs(
-    title = "Total Particulate Matter (PM) vs Time",
+    title = "Particulate Matter (PM) Concentrations vs Time By Region",
+    subtitle = str_c("Starting in ", start_year - 20, ", ending in ", end_year),
+    x = "Time (days)",
+    y = "Total PM (μg/m^3)",
+    legend = "Region"
+  )
+```
+
+Carbon Dioxide
+
+```{r}
+#CO2 vs time graph
+CO2 |>
+ggplot(aes(x = time, y = total_CO2)) +
+  geom_line() +
+  theme_classic() +
+  labs(
+    title = "Total CO2 Emitted since 1980 vs Time",
+    subtitle = str_c("Starting in 1980, ending in ", end_year),
+    x = "Time (days)",
+    y = "Total CO2 (g)"
+  )
+```
+
+Nitrogen Oxides
+
+```{r}
+NOx |>
+ggplot(aes(x = time, y = total_NOx)) +
+  geom_line() +
+  theme_classic() +
+  labs(
+    title = "Nitrogen Oxide (NOx) Concentration vs Time",
+    subtitle = str_c("Starting in ", start_year,", ending in ", end_year),
+    x = "Time (days)",
+    y = "Total NOx (ppb)"
+  )
+```
+
+```{r}
+NOx |>
+  rename_with(~as.character(seq_along(.x)), .cols = 2:(N + 1)) |>
+  pivot_longer(2:(N + 1), names_to = "region", values_to = "NOx") |>
+  select(time, region, NOx, total_NOx) |>
+  ggplot(aes(x = time)) +
+  geom_line(aes(y = NOx, color = region)) +
+  geom_line(aes(y = total_NOx, color = "Total")) +
+  theme_classic() +
+  labs(
+    title = "Nitrogen Oxide (NOx) Concentrations vs Time By Region",
     subtitle = str_c("Starting in ", start_year, ", ending in ", end_year),
     x = "Time (days)",
     y = "Total PM (μg/m^3)",

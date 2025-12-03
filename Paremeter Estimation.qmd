@@ -6,20 +6,29 @@ editor: visual
 
 ```{r}
 library(tidyverse)
-warehouse_summary <- read.csv("SummaryStats.csv")
 ```
 
 ```{r}
-warehouse_summary <- warehouse_summary |>
-  
+warehouse_summary <- read.csv("SummaryStats.csv") |>
   mutate(Daily.Truck.trips = 
            str_remove_all(warehouse_summary$Daily.Truck.trips, ",") |>
            as.numeric(),
          Warehouse.floor.space..Sq.Ft.. = 
            str_remove_all(warehouse_summary$Warehouse.floor.space..Sq.Ft.., ",") |>
            as.numeric(),
-           ) |>
+         ) |>
   filter(Category == "Existing") |>
-  mutate(b = Daily.Truck.trips / Warehouse.floor.space..Sq.Ft..) |>
-  select(Warehouse.floor.space..Sq.Ft.., Daily.Truck.trips, b)
+  mutate(b = Daily.Truck.trips / Warehouse.floor.space..Sq.Ft..) 
+```
+
+```{r}
+#using data from 2021 because it is the latest recorded data, but we can change to projected data if we wanted to
+vehicle_summary <- read.csv("Average Vehicle Emissions.csv") |>
+  mutate(type_of_pollutant = c(NA, "HC", "CO", "NOx", "PM", "PM", "PM", "CO2", NA),
+         `2021` = str_remove_all(vehicle_summary$X.R..2021, ",") |>
+           as.numeric()) |>
+  group_by(type_of_pollutant) |>
+  summarize(total_pollutant = sum(`2021`)) |>
+  mutate(total_pollutant = 500 * total_pollutant) |> #change from grams per mile per vehicle to grams per day per vehicle
+  pivot_wider(names_from = type_of_pollutant, values_from = total_pollutant)
 ```
