@@ -64,7 +64,7 @@ parameters <- list(
   w2 = rnorm(N, warehouse_cap, sd = 0.1*10^9) / N, #warehouse carrying capacity
   
   pm = vehicle_summary$PM[1] * 10^6 / V, #trucks diesel PM emissions rate (micrograms/(truck*m^3*day))
-  pm_disp = 0.8, #PM dispersal rate, 80% of PM in the air disperses every day
+  pm_disp = 0.5, #PM dispersal rate, 50% of PM in the air disperses every day
   
   co2 = vehicle_summary$CO2[1], #trucks CO2 emissions rate (g/truck/day)
   
