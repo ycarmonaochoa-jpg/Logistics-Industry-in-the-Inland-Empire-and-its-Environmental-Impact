@@ -13,7 +13,11 @@ library(tidyverse)
 
 Change the number of regions by changing N and then changing the number of variables to account for those regions. C should always be NxN, and all of the other parameter vectors should be N long. Initial conditions should be Nx2 if we are modeling 2 variables, or Nx3 if we are modeling 3.
 
+Constants
+
 ```{r}
+#constants for the type of simulation we run
+
 set.seed(46)
 #number of regions
 N <- 4
@@ -24,6 +28,24 @@ H <- 1500
 #volume of each region (m^3)
 V <- 2.7*10^10 * H / N
 
+#warehouse growth mean from logistic fit
+warehouse_rate_yrs <- 0.0536353459944 #(yr^-1)
+warehouse_rate <- warehouse_rate_yrs * 0.00273973 #(day^-1)
+
+#warehouse carrying capacity from logistic fit
+warehouse_cap <- 1.1193946263*10^9 #sqft
+
+#number of warehouses at start of data
+warehouses_0 <- sqft_yearly$logistic_pred[1] #sqft
+
+#what year should we start showing our data at?
+start_year <- 2020
+end_year <- 2030
+```
+
+System of ODEs itself:
+
+```{r}
 #Parameters
 parameters <- list(
   a = c(0.2, 0.2, 0.3, 0.3), #trucks going to park, should add to 1 since most trucks have a 11 hour daily limit
@@ -37,8 +59,8 @@ parameters <- list(
              ncol = N), #Truck travel matrix, fraction of trucks moving between the regions
             
   
-  w1 = c(0.3, 0.5, 0.2, 0.3), #warehouse growth rate
-  w2 = c(3000, 3200, 1222, 300), #warehouse carrying capacity
+  w1 = rnorm(N, warehouse_rate, sd = 0.00001), #warehouse growth rate
+  w2 = rnorm(N, warehouse_cap, sd = 0.1*10^9) / N, #warehouse carrying capacity
   
   pm = 10, #trucks PM emissions rate
   pm_disp = 4, #PM dispersal rate
@@ -53,7 +75,7 @@ parameters <- list(
 #Initial Conditions
 Y <- c(
   300, 1800, 1000, 2000, #initial trucks
-  2966.406/N, 2966.406/N, 2966.406/N, 2966.406/N, #initial warehouses
+  rnorm(N, warehouses_0, 100000000) / N, #initial warehouses
   8, 8, 8, 8, #initial PM in the air (micrograms/m^3)
   0, 0, 0, 0, #initial CO2 in the air (g)
   0, 0, 0, 0 #initial NOx in the air()
@@ -76,9 +98,9 @@ dY <- c()
           sum(parameters$C[,i]) * Y[i] +
           sum(parameters$C[i,] * Y[1:N]) 
         
-        dY[i + N] <- parameters$w1[i] #* Y[i + N] *
-          #(1 - (1 / parameters$w2[i]) * 
-           #  Y[i + N])
+        dY[i + N] <- parameters$w1[i] * Y[i + N] *
+          (1 - (1 / parameters$w2[i]) * 
+             Y[i + N])
         
         dY[i + 2*N] <- parameters$pm * Y[i] - parameters$pm_disp * Y[i + 2*N]
         
@@ -92,8 +114,9 @@ dY <- c()
 }
 
 #time step and how long to run ODE
-time_step <- 0.01
-max_time <- 100
+total_days <- (end_year - 1980) * 365.25
+time_step <- 0.1 #sample it every 0.1 days
+max_time <- total_days #run for this many days
 times <- seq(0, max_time, by = time_step)
 
 #Run
@@ -104,17 +127,37 @@ truck_growth_results <- ode(y = Y, times = times, func = truck_growth, parms = p
 Data wrangling
 
 ```{r}
+limit <- (start_year - 1980) * 365.25
+
 trucks <- truck_growth_results |>
   select(1:(N + 1)) |>
-  mutate(total_trucks = rowSums(across(2:(N + 1))))
+  mutate(total_trucks = rowSums(across(2:(N + 1)))) |>
+  filter(time > limit) |>
+  mutate(time = time - limit)
 
 warehouses <- truck_growth_results |>
   select(1, (N + 2):(2*N + 1)) |>
-  mutate(total_warehouses = rowSums(across(2:(N + 1))))
+  mutate(total_warehouses = rowSums(across(2:(N + 1)))) |>
+  filter(time > limit) |>
+  mutate(time = time - limit)
 
-pollution <- truck_growth_results |>
+PM <- truck_growth_results |>
   select(1, (2*N + 2):(3*N + 1)) |>
-  mutate(total_pollution = rowSums(across(2:(N + 1))))
+  mutate(total_pollution = rowSums(across(2:(N + 1))))|>
+  filter(time > limit) |>
+  mutate(time = time - limit)
+
+CO2 <- truck_growth_results |>
+  select(1, (3*N + 2):(4*N + 1)) |>
+  mutate(total_warehouses = rowSums(across(2:(N + 1)))) |>
+  filter(time > limit) |>
+  mutate(time = time - limit)
+
+NOx <- truck_growth_results |>
+  select(1, (4*N + 2):(5*N + 1)) |>
+  mutate(total_warehouses = rowSums(across(2:(N + 1)))) |>
+  filter(time > limit) |>
+  mutate(time = time - limit)
 ```
 
 Plotting
@@ -127,7 +170,8 @@ ggplot() +
   theme_classic() +
   labs(
     title = "Total Trucks vs Time",
-    x = "Time",
+    subtitle = str_c("Starting in ", start_year, ", ending in ", end_year),
+    x = "Time (days)",
     y = "Total Trucks"
   )
 
@@ -143,7 +187,8 @@ trucks |>
   theme_classic() +
   labs(
     title = "Trucks vs Time by Region",
-    x = "Time",
+    subtitle = str_c("Starting in ", start_year, ", ending in ", end_year),
+    x = "Time (days)",
     y = "Trucks",
     legend = "Region"
   )
@@ -157,8 +202,9 @@ ggplot(aes(x = time, y = total_warehouses)) +
   theme_classic() +
   labs(
     title = "Total Warehouses vs Time",
-    x = "Time",
-    y = "Total Warehouses"
+    subtitle = str_c("Starting in ", start_year, ", ending in ", end_year),
+    x = "Time (days)",
+    y = "Total Warehouses Area (sq. ft.)"
   )
 
 ```
@@ -174,6 +220,7 @@ warehouses |>
   theme_classic() +
   labs(
     title = "Warehouses vs Time by Region",
+    subtitle = str_c("Starting in ", start_year, ", ending in ", end_year),
     x = "Time",
     y = "Warehouses",
     legend = "Region"
@@ -182,19 +229,20 @@ warehouses |>
 
 ```{r}
 #Pollution vs time graph
-pollution |>
+PM |>
 ggplot(aes(x = time, y = total_pollution)) +
   geom_line() +
   theme_classic() +
   labs(
-    title = "Total Pollution vs Time",
-    x = "Time",
-    y = "Total Pollution"
+    title = "Total Particulate Matter (PM) vs Time",
+    subtitle = str_c("Starting in ", start_year, ", ending in ", end_year),
+    x = "Time (days)",
+    y = "Total PM (μg/m^3)"
   )
 ```
 
 ```{r}
-pollution |>
+PM |>
   rename_with(~as.character(seq_along(.x)), .cols = 2:(N + 1)) |>
   pivot_longer(2:(N + 1), names_to = "region", values_to = "pollution") |>
   select(time, region, pollution, total_pollution) |>
@@ -203,9 +251,10 @@ pollution |>
   geom_line(aes(y = total_pollution, color = "Total")) +
   theme_classic() +
   labs(
-    title = "Pollution vs Time by Region",
-    x = "Time",
-    y = "Pollution",
+    title = "Total Particulate Matter (PM) vs Time",
+    subtitle = str_c("Starting in ", start_year, ", ending in ", end_year),
+    x = "Time (days)",
+    y = "Total PM (μg/m^3)",
     legend = "Region"
   )
 ```
