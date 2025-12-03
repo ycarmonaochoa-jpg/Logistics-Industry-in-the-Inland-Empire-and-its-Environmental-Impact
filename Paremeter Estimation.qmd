@@ -1,0 +1,25 @@
+---
+title: "Parameter Estimation"
+format: html
+editor: visual
+---
+
+```{r}
+library(tidyverse)
+warehouse_summary <- read.csv("SummaryStats.csv")
+```
+
+```{r}
+warehouse_summary <- warehouse_summary |>
+  
+  mutate(Daily.Truck.trips = 
+           str_remove_all(warehouse_summary$Daily.Truck.trips, ",") |>
+           as.numeric(),
+         Warehouse.floor.space..Sq.Ft.. = 
+           str_remove_all(warehouse_summary$Warehouse.floor.space..Sq.Ft.., ",") |>
+           as.numeric(),
+           ) |>
+  filter(Category == "Existing") |>
+  mutate(b = Daily.Truck.trips / Warehouse.floor.space..Sq.Ft..) |>
+  select(Warehouse.floor.space..Sq.Ft.., Daily.Truck.trips, b)
+```

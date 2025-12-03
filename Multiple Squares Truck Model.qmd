@@ -14,16 +14,21 @@ library(tidyverse)
 Change the number of regions by changing N and then changing the number of variables to account for those regions. C should always be NxN, and all of the other parameter vectors should be N long. Initial conditions should be Nx2 if we are modeling 2 variables, or Nx3 if we are modeling 3.
 
 ```{r}
+set.seed(46)
 #number of regions
 N <- 4
 
-#area of each region (m^2)
-A <- 2.7*10^10 / N
+#height of air above the Inland Empire that is susceptible to pollution (m)
+H <- 1500
+
+#volume of each region (m^3)
+V <- 2.7*10^10 * H / N
 
 #Parameters
 parameters <- list(
-  a = c(0.5, .84, .19, 0.1), #trucks going to park
-  b = c(.40, .20, .9, 0.3), #trucks starting their journeys
+  a = c(0.2, 0.2, 0.3, 0.3), #trucks going to park, should add to 1 since most trucks have a 11 hour daily limit
+  b = rnorm(N, mean = warehouse_summary$b[1], sd = 0.00001), #(trucks/day/sqft of warehouse)
+  #trucks starting their journeys, a random number with the mean being the average amount of trips per day that a square foot of warehosue produces in Southern CA.
 
   C = matrix(c(0, 0.1, 0, 0,
                0.3, 0, 0.2, 0.1,
@@ -35,15 +40,23 @@ parameters <- list(
   w1 = c(0.3, 0.5, 0.2, 0.3), #warehouse growth rate
   w2 = c(3000, 3200, 1222, 300), #warehouse carrying capacity
   
-  p = 10, #trucks emissions rate
-  d = 4 #pollution dispersal rate
+  pm = 10, #trucks PM emissions rate
+  pm_disp = 4, #PM dispersal rate
+  
+  co2 = 10, #trucks CO2 emissions rate
+  co2_disp = 4, #CO2 dispersal rate
+  
+  nox = 10, #trucks NOx emissions rate
+  nox_disp = 4 #NOx dispersal rate
   )
 
 #Initial Conditions
 Y <- c(
   300, 1800, 1000, 2000, #initial trucks
-  3200, 1800, 100, 150,  #initial warehouses
-  8, 8, 8, 8 #initial PM in the air (micrograms/m^3, assume that it starts at 8 micrograms per cubic meter, the AQI for today and tomorrow)
+  2966.406/N, 2966.406/N, 2966.406/N, 2966.406/N, #initial warehouses
+  8, 8, 8, 8, #initial PM in the air (micrograms/m^3)
+  0, 0, 0, 0, #initial CO2 in the air (g)
+  0, 0, 0, 0 #initial NOx in the air()
 )
 
 
@@ -54,6 +67,9 @@ dY <- c()
  # rate of change
    #Y[i] is trucks,
    #Y[i + N] is warehouses
+   #Y[i + 2N] is PM
+   #Y[i + 3N] is CO2
+   #Y[i + 4N] is NOx
       for (i in 1:N){
         dY[i] <- parameters$b[i] * Y[i + N] - 
           parameters$a[i] * Y[i] - 
@@ -64,7 +80,11 @@ dY <- c()
           #(1 - (1 / parameters$w2[i]) * 
            #  Y[i + N])
         
-        dY[i + 2*N] <- parameters$p * Y[i] - parameters$d * Y[i + 2*N]
+        dY[i + 2*N] <- parameters$pm * Y[i] - parameters$pm_disp * Y[i + 2*N]
+        
+        dY[i + 3*N] <- parameters$co2 * Y[i] - parameters$co2_disp * Y[i + 3*N]
+        
+        dY[i + 4*N] <- parameters$nox * Y[i] - parameters$nox_disp * Y[i + 4*N]
       }
     # return the rate of change
     list(dY)
@@ -73,7 +93,7 @@ dY <- c()
 
 #time step and how long to run ODE
 time_step <- 0.01
-max_time <- 500
+max_time <- 100
 times <- seq(0, max_time, by = time_step)
 
 #Run
