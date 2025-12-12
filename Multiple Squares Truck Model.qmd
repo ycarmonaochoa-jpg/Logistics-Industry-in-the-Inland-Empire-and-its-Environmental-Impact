@@ -11,7 +11,9 @@ library(deSolve)
 library(tidyverse)
 ```
 
-Change the number of regions by changing N and then changing the number of variables to account for those regions. C should always be NxN, and all of the other parameter vectors should be N long. Initial conditions should be Nx2 if we are modeling 2 variables, or Nx3 if we are modeling 3.
+To run this document, run Parameter Estimation.qmd first.
+
+Change the number of regions by changing N and then changing the number of variables to account for those regions. C should always be NxN, and all of the other parameter vectors should be N long. Initial conditions should be NxV where V is the number of variables being modeled.
 
 Constants
 
@@ -58,6 +60,7 @@ parameters <- list(
                0, 0.2, 0, 0,
                0, 0.2, 0, 0), 
              ncol = N), #Truck travel matrix, fraction of trucks moving between the regions
+  #Change ^ these values to change the number of trucks traveling between each region.
             
   
   w1 = rnorm(N, warehouse_rate, sd = 0.00001), #warehouse growth rate
@@ -68,7 +71,7 @@ parameters <- list(
   
   co2 = vehicle_summary$CO2[1], #trucks CO2 emissions rate (g/truck/day)
   
-  nox = vehicle_summary$NOx[1] * 10^6 / V / 1.4, #trucks NOx emissions rate (ppb/truck/day/m^3)
+  nox = vehicle_summary$NOx[1] * 10^6 / V / 1.4, #trucks NOx emissions rate (ppb/truck/day)
   nox_disp = 0.9 #NOx dispersal rate
   )
 
@@ -93,14 +96,14 @@ dY <- c()
    #Y[i + 3N] is CO2
    #Y[i + 4N] is NOx
       for (i in 1:N){
-        dY[i] <- parameters$b[i] * Y[i + N] -  #trucks
+        dY[i] <- parameters$b[i] * Y[i + N] -  
           parameters$a[i] * Y[i] - 
           sum(parameters$C[,i]) * Y[i] +
-          sum(parameters$C[i,] * Y[1:N]) 
+          sum(parameters$C[i,] * Y[1:N]) #trucks
         
-        dY[i + N] <- parameters$w1[i] * Y[i + N] * #warehouses
+        dY[i + N] <- parameters$w1[i] * Y[i + N] * 
           (1 - (1 / parameters$w2[i]) * 
-             Y[i + N])
+             Y[i + N]) #warehouses
         
         dY[i + 2*N] <- parameters$pm * Y[i] - parameters$pm_disp * Y[i + 2*N] #PM
         
@@ -330,7 +333,7 @@ NOx |>
     title = "Nitrogen Oxide (NOx) Concentrations vs Time By Region",
     subtitle = str_c("Starting in ", start_year, ", ending in ", end_year),
     x = "Time (days)",
-    y = "Total PM (μg/m^3)",
+    y = "Total NOx (ppb)",
     legend = "Region"
   )
 ```

@@ -8,6 +8,8 @@ editor: visual
 library(tidyverse)
 ```
 
+This document creates tables to be read by the "Multiple Squares Truck Model" document. This document has to be run before that one.
+
 ```{r}
 warehouse_summary <- read.csv("SummaryStats.csv") |>
   mutate(Daily.Truck.trips = 
